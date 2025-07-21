@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiosque Interativo da Cooperativa</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tone.js CDN for sound effects -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <!-- Tailwind CSS custom config - MUST be after Tailwind CDN script -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            DEFAULT: '#3FA110', // Pantone 361 C equivalent
+                            light: '#E6F7E6', // Very light green for backgrounds/correct answers
+                            dark: '#2C7A0C', // Darker green for text/accents
+                        },
+                        'accent-rewards': '#F59E0B', // Amber for rewards (retained for visual distinction)
+                        'accent-help': '#10B981', // Emerald for help buttons (harmonious green)
+                        neutral: {
+                            light: '#F5F5F4', // Stone-100
+                            DEFAULT: '#78716C', // Stone-500
+                            dark: '#44403C', // Stone-800
+                        },
+                        white: '#FFFFFF', // Explicitly defined white
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Chosen Palette: Pantone 361 C Green (#3FA100) and White (#FFFFFF), complemented by derived greens and existing neutrals. -->
+    <!-- Application Structure Plan: A Single-Page Application (SPA) approach using distinct 'screen' divs. Navigation is handled by JS, showing/hiding screens to mirror the user journey. The initial 'Attraction Screen' dynamically engages users, leading to a brief 'Welcome Screen', then 'Login', and finally the 'Main Menu'. A new 'AI Consultant' screen is added for interactive financial Q&A. This structure prioritizes initial engagement, financial education, and a clear, guided user flow, ideal for a public kiosk. -->
+    <!-- Visualization & Content Choices: Primary content is presented through dynamic HTML. The game uses JS to populate question/answer text into styled div elements. User progress and rewards are shown in structured lists and cards. The new AI Consultant screen uses text input and output for LLM interaction. This avoids complex visualizations for clarity and speed, crucial for a public kiosk. The focus is on large, readable text and clear, clickable buttons. No charts are needed as the core data (score, points) is effectively communicated with large-text dynamic numbers. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .screen { display: none; }
+        .active-screen { display: flex; }
+        .btn {
+            transition: all 0.2s ease-in-out;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .answer-btn:hover {
+            background-color: #f0f0f0;
+        }
+        .keyboard-key {
+            transition: all 0.1s ease;
+        }
+        .keyboard-key:active {
+            transform: scale(0.95);
+            background-color: #d1d5db;
+        }
+    </style>
+</head>
+<body class="bg-neutral-light text-neutral-dark flex items-center justify-center min-h-screen">
+
+    <!-- Audio Player for Background Music -->
+    <audio id="background-audio" src="./natureza.mp3" loop controls class="absolute top-4 left-4 z-50"></audio>
+
+    <div id="kiosk-container" class="w-full max-w-4xl h-[90vh] max-h-[800px] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+
+        <!-- Attraction Screen (New) -->
+        <section id="attraction-screen" class="screen active-screen flex-col items-center justify-center text-center p-8 bg-primary text-white h-full">
+            <img src="simbolo.png" alt="Símbolo Sicredi" class="w-64 h-auto mb-8">
+            <h1 class="text-5xl font-bold mb-4">Atenção!</h1>
+            <p id="attraction-message" class="text-3xl mb-8 transition-opacity duration-1000 ease-in-out">Ganhe pontos enquanto espera!</p>
+            <button onclick="initAudioAndNavigateTo('welcome-screen')" class="btn bg-white text-primary-dark font-bold py-4 px-10 text-2xl rounded-xl">
+                Tocar para Iniciar
+            </button>
+        </section>
+
+        <!-- Welcome Screen -->
+        <section id="welcome-screen" class="screen flex-col items-center justify-center text-center p-8 bg-primary text-white h-full">
+            <img src="simbolo.png" alt="Logo Sicredi" class="w-64 h-auto mb-8">
+            <h1 class="text-5xl font-bold mb-4">Seja bem-vindo ao Quiosque Interativo Sicredi!</h1>
+            <p class="text-2xl mb-8">Aprenda, divirta-se e ganhe prêmios.</p>
+            <button onclick="navigateTo('login-screen')" class="btn bg-white text-primary-dark font-bold py-4 px-10 text-2xl rounded-xl">
+                Continuar
+            </button>
+        </section>
+
+        <!-- Login Screen -->
+        <section id="login-screen" class="screen flex-col items-center justify-center p-8 h-full">
+            <h2 class="text-4xl font-bold mb-6">Identifique-se</h2>
+            <p class="text-lg mb-8 text-center">Digite seu CPF e senha para acessar.</p>
+            <input type="text" id="login-input-cpf" class="w-full max-w-md text-3xl p-4 border-2 border-stone-300 rounded-lg text-center mb-4" placeholder="CPF (somente números)">
+            <input type="password" id="login-input-password" class="w-full max-w-md text-3xl p-4 border-2 border-stone-300 rounded-lg text-center mb-4" placeholder="Senha">
+            <div id="virtual-keyboard" class="grid grid-cols-3 gap-2 w-full max-w-md mb-6">
+                </div>
+            <div class="flex space-x-4">
+                <button onclick="login()" class="btn bg-primary text-white font-bold py-3 px-8 text-xl rounded-lg">Entrar</button>
+                <button onclick="navigateTo('registration-screen')" class="btn bg-accent-help text-white font-bold py-3 px-8 text-xl rounded-lg">Cadastrar</button>
+                <button onclick="loginAsGuest()" class="btn bg-neutral text-white font-bold py-3 px-8 text-xl rounded-lg">Convidado</button>
+            </div>
+        </section>
+
+        <!-- Registration Screen -->
+        <section id="registration-screen" class="screen flex-col items-center justify-center p-8 h-full">
+            <h2 class="text-4xl font-bold mb-6">Novo Cadastro</h2>
+            <p class="text-lg mb-4 text-center">Preencha seus dados para criar uma conta e acumular pontos.</p>
+            <input type="text" id="reg-name-input" class="w-full max-w-md text-3xl p-4 border-2 border-stone-300 rounded-lg text-center mb-4" placeholder="Nome Completo">
+            <input type="text" id="reg-cpf-input" class="w-full max-w-md text-3xl p-4 border-2 border-stone-300 rounded-lg text-center mb-4" placeholder="CPF (somente números)">
+            <input type="password" id="reg-password-input" class="w-full max-w-md text-3xl p-4 border-2 border-stone-300 rounded-lg text-center mb-6" placeholder="Senha">
+            <div class="flex space-x-4">
+                <button onclick="registerUser()" class="btn bg-primary text-white font-bold py-3 px-8 text-xl rounded-lg">Cadastrar</button>
+                <button onclick="navigateTo('login-screen')" class="btn bg-neutral text-white font-bold py-3 px-8 text-xl rounded-lg">Voltar ao Login</button>
+            </div>
+        </section>
+
+        <!-- Main Menu Screen -->
+        <section id="main-menu-screen" class="screen flex-col items-center justify-center p-8 h-full">
+            <h2 id="welcome-message" class="text-4xl font-bold mb-12 text-center">Olá!</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-2xl">
+                <button onclick="navigateTo('game-intro-screen')" class="btn bg-primary text-white p-8 rounded-2xl text-3xl font-bold flex flex-col items-center justify-center h-48">
+                    <span>▶️</span> Jogar Show do Conhecimento
+                </button>
+                <button onclick="navigateTo('rewards-screen')" class="btn bg-accent-rewards text-white p-8 rounded-2xl text-3xl font-bold flex flex-col items-center justify-center h-48">
+                    <span>🏆</span> Meus Prêmios
+                </button>
+                <button onclick="navigateTo('products-screen')" class="btn bg-accent-help text-white p-8 rounded-2xl text-3xl font-bold flex flex-col items-center justify-center h-48">
+                    <span>💡</span> Nossos Produtos
+                </button>
+                <button onclick="navigateTo('ai-consultant-screen')" class="btn bg-blue-500 text-white p-8 rounded-2xl text-3xl font-bold flex flex-col items-center justify-center h-48">
+                    ✨ Consultor Financeiro Inteligente ✨
+                </button>
+                <button onclick="logout()" class="btn bg-neutral text-white p-8 rounded-2xl text-3xl font-bold flex flex-col items-center justify-center h-48">
+                    <span>🚪</span> Sair
+                </button>
+            </div>
+        </section>
+
+        <!-- Game Intro Screen -->
+        <section id="game-intro-screen" class="screen flex-col items-center justify-center text-center p-8 h-full">
+            <h2 class="text-4xl font-bold mb-6">Show do Conhecimento</h2>
+            <div class="text-lg max-w-xl space-y-4 mb-8">
+                <p>✔️ Responda a perguntas de múltipla escolha sobre educação financeira e nossa cooperativa.</p>
+                <p>✔️ Cada acerto aumenta sua pontuação e te leva para a próxima pergunta.</p>
+                <p>✔️ Use as ajudas com sabedoria! Você só pode usar cada uma vez por jogo.</p>
+                <p>✔️ Ao final, seus pontos são adicionados ao seu saldo para trocar por prêmios!</p>
+            </div>
+            <button onclick="startGame()" class="btn bg-primary text-white font-bold py-4 px-10 text-2xl rounded-xl">Vamos Jogar!</button>
+        </section>
+        
+        <!-- Game Play Screen -->
+        <section id="game-play-screen" class="screen flex-col items-center justify-between p-8 h-full">
+            <div class="w-full flex justify-between items-center text-2xl font-bold">
+                <div>Pontuação: <span id="game-score">0</span></div>
+                <div id="game-timer">Tempo: 60</div>
+            </div>
+            <div class="w-full flex-grow flex items-center justify-center">
+                <h3 id="question-text" class="text-4xl font-bold text-center max-w-3xl">Carregando pergunta...</h3>
+            </div>
+            <div id="answers-grid" class="w-full max-w-4xl grid grid-cols-2 gap-4 mb-8">
+                </div>
+            <div class="flex items-center space-x-4">
+                <span class="font-bold text-xl">Ajudas:</span>
+                <button id="help-5050" onclick="useHelp('5050')" class="btn bg-accent-rewards text-white py-3 px-6 rounded-lg font-semibold">50/50</button>
+                <button id="help-skip" onclick="useHelp('skip')" class="btn bg-accent-help text-white py-3 px-6 rounded-lg font-semibold">Pular</button>
+                <button onclick="useHelp('coop')" class="btn bg-primary-dark text-white py-3 px-6 rounded-lg font-semibold">Dica da Coop</button>
+            </div>
+        </section>
+
+        <!-- Game Results Screen -->
+        <section id="game-results-screen" class="screen flex-col items-center justify-center text-center p-8 h-full">
+            <h2 class="text-5xl font-bold mb-4">Fim de Jogo!</h2>
+            <p class="text-3xl mb-2">Sua pontuação final:</p>
+            <p id="final-score" class="text-8xl font-bold text-primary mb-8">0</p>
+            <p id="points-earned-message" class="text-2xl mb-10"></p>
+            <div class="flex space-x-6">
+                <button onclick="navigateTo('rewards-screen')" class="btn bg-accent-rewards text-white font-bold py-3 px-8 text-xl rounded-lg">Ver Meus Prêmios</button>
+                <button onclick="navigateTo('main-menu-screen')" class="btn bg-neutral text-white font-bold py-3 px-8 text-xl rounded-lg">Menu Principal</button>
+            </div>
+        </section>
+        
+        <!-- Rewards Screen -->
+        <section id="rewards-screen" class="screen flex-col p-8 h-full">
+            <div class="w-full flex justify-between items-center mb-6">
+                <h2 class="text-4xl font-bold">Meus Prêmios</h2>
+                <button onclick="navigateTo('main-menu-screen')" class="btn bg-neutral-light py-2 px-4 rounded-lg">Voltar</button>
+            </div>
+            <div id="user-points-display" class="w-full bg-primary text-white p-6 rounded-xl text-center mb-8">
+                 </div>
+            <h3 class="text-2xl font-bold mb-4">Prêmios para Resgate</h3>
+            <div id="rewards-list" class="flex-grow overflow-y-auto space-y-4 pr-2">
+                </div>
+            <div class="mt-8 p-4 bg-neutral-light rounded-lg text-neutral-dark">
+                <h4 class="text-xl font-bold mb-2">Como Resgatar seu Prêmio:</h4>
+                <p class="text-lg">Após clicar em "Resgatar", um voucher será gerado. Apresente este voucher (ou o código gerado) na gerência da cooperativa para retirar seu prêmio físico ou ter o crédito aplicado em sua conta.</p>
+                <p class="text-lg mt-2">Lembre-se: Prêmios em dinheiro são creditados diretamente na sua conta Sicredi. Para itens físicos, a retirada deve ser feita na agência.</p>
+            </div>
+        </section>
+
+        <!-- Products Screen -->
+        <section id="products-screen" class="screen flex-col p-8 h-full">
+             <div class="w-full flex justify-between items-center mb-6">
+                <h2 class="text-4xl font-bold">Conheça Nossos Produtos</h2>
+                <button onclick="navigateTo('main-menu-screen')" class="btn bg-neutral-light py-2 px-4 rounded-lg">Voltar</button>
+            </div>
+            <div class="flex-grow w-full space-y-4">
+                 <div class="p-6 bg-neutral-light rounded-lg">
+                    <h3 class="text-2xl font-bold text-primary-dark mb-2">Crédito Pessoal</h3>
+                    <p>Realize seus sonhos com taxas justas e parcelas que cabem no seu bolso. Processo rápido e sem burocracia para cooperados.</p>
+                </div>
+                 <div class="p-6 bg-neutral-light rounded-lg">
+                    <h3 class="text-2xl font-bold text-primary-dark mb-2">Investimentos</h3>
+                    <p>Faça seu dinheiro render mais com nossas opções de investimento. Conte com a segurança da cooperativa e a assessoria de nossos especialistas.</p>
+                </div>
+                 <div class="p-6 bg-neutral-light rounded-lg">
+                    <h3 class="text-2xl font-bold text-accent-rewards mb-2">Seguros</h3>
+                    <p>Proteja o que é mais importante para você. Oferecemos seguros de vida, residencial e automotivo com condições especiais para membros.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- AI Consultant Screen (New) -->
+        <section id="ai-consultant-screen" class="screen flex-col p-8 h-full">
+            <div class="w-full flex justify-between items-center mb-6">
+                <h2 class="text-4xl font-bold">✨ Consultor Financeiro Inteligente ✨</h2>
+                <button onclick="navigateTo('main-menu-screen')" class="btn bg-neutral-light py-2 px-4 rounded-lg">Voltar</button>
+            </div>
+            <div class="flex-grow w-full flex flex-col bg-neutral-light rounded-lg p-6 mb-4 overflow-y-auto">
+                <p class="text-lg text-neutral-dark mb-4">Pergunte-me sobre produtos financeiros, educação cooperativista ou qualquer dúvida que tiver!</p>
+                <div id="ai-response-area" class="flex-grow text-lg text-neutral-dark overflow-y-auto">
+                    <!-- AI responses will appear here -->
+                </div>
+                <div id="ai-loading-indicator" class="hidden text-center text-primary-dark mt-4">
+                    Carregando...
+                </div>
+            </div>
+            <div class="flex w-full space-x-2">
+                <input type="text" id="ai-question-input" class="flex-grow text-xl p-3 border-2 border-stone-300 rounded-lg" placeholder="Digite sua pergunta...">
+                <button onclick="askAIQuestion()" id="ask-ai-btn" class="btn bg-primary text-white font-bold py-3 px-6 rounded-lg">Perguntar</button>
+            </div>
+        </section>
+
+        <!-- Modal -->
+        <div id="modal-container" class="hidden absolute inset-0 bg-black bg-opacity-50 items-center justify-center p-8">
+            <div class="bg-white rounded-lg shadow-xl p-8 text-center max-w-md">
+                <h3 id="modal-title" class="text-2xl font-bold mb-4">Aviso</h3>
+                <p id="modal-message" class="text-lg mb-6">Mensagem do modal.</p>
+                <button onclick="closeModal()" class="btn bg-primary text-white py-2 px-6 rounded-lg">OK</button>
+            </div>
+        </div>
+
+    </div>
+
+<script>
+    const state = {
+        currentUser: null,
+        currentScreen: 'attraction-screen', // Changed initial screen
+        game: {
+            questions: [],
+            currentQuestionIndex: 0,
+            score: 0,
+            timer: null,
+            timerValue: 60,
+            helpUsed: {
+                '5050': false,
+                'skip': false,
+                'coop': false
+            }
+        }
+    };
+
+    const mockData = {
+        users: [
+            { id: '123', name: 'Maria Silva', points: 1250, password: '123' },
+            { id: '456', name: 'João Costa', points: 800, password: '456' }
+        ],
+        questions: [
+            {
+                question: "O que é a taxa SELIC?",
+                answers: ["Taxa de juros básica da economia", "Imposto sobre produtos", "Taxa de desemprego", "Índice de inflação"],
+                correct: 0,
+                coopHelp: "É a principal ferramenta do Banco Central para controlar a inflação."
+            },
+            {
+                question: "Em uma cooperativa de crédito, os membros são também...",
+                answers: ["Clientes", "Funcionários", "Investidores", "Donos"],
+                correct: 3,
+                coopHelp: "Diferente de um banco, aqui você participa das decisões e dos resultados."
+            },
+            {
+                question: "Para que serve uma reserva de emergência?",
+                answers: ["Para comprar um carro novo", "Para cobrir gastos inesperados", "Para investir na bolsa", "Para pagar as férias"],
+                correct: 1,
+                coopHelp: "É um valor guardado para imprevistos, como problemas de saúde ou perda de emprego."
+            },
+            {
+                question: "O que significa 'investir com diversificação'?",
+                answers: ["Investir tudo em uma só ação", "Guardar dinheiro na poupança", "Distribuir o dinheiro em diferentes tipos de investimentos", "Comprar moedas estrangeiras"],
+                correct: 2,
+                coopHelp: "A famosa frase 'não coloque todos os ovos na mesma cesta' se aplica aqui."
+            },
+            {
+                question: "Qual o principal objetivo do cooperativismo?",
+                answers: ["Gerar lucro para acionistas", "Promover o bem-estar social e econômico dos membros", "Competir com grandes bancos", "Vender produtos financeiros"],
+                correct: 1,
+                coopHelp: "O foco é no benefício mútuo dos cooperados, não no lucro de poucos."
+            }
+        ],
+        rewards: [
+            { name: 'R$ 2,00 em crédito na conta', points: 400 },
+            { name: 'R$ 5,00 em crédito na conta', points: 500 },
+            { name: 'R$ 10,00 em crédito na conta', points: 700 },
+            { name: 'Caneta Personalizada Sicredi', points: 300 },
+            { name: 'Estojo Exclusivo Sicredi', points: 600 },
+            { name: 'Caneca Sicredi', points: 800 },
+            { name: 'Camisa do Banco Sicredi', points: 1200 },
+            { name: 'Desconto de 10% na anuidade do cartão', points: 1500 },
+            { name: 'Consultoria Financeira Gratuita', points: 2500 },
+            { name: 'Ingresso para o Cinema', points: 4000 }
+        ]
+    };
+
+    const attractionMessages = [
+        "Ganhe pontos enquanto espera!",
+        "Jogue e concorra a prêmios!",
+        "Teste seus conhecimentos e seja recompensado!",
+        "Descubra os benefícios da nossa cooperativa!"
+    ];
+    let currentAttractionMessageIndex = 0;
+    let attractionInterval;
+
+    // Get reference to the audio element
+    const backgroundAudio = document.getElementById('background-audio');
+
+    // Tone.js is no longer used for background music, but kept for sound effects
+    let clickSynth, feedbackSynth, gameEndSynth, redeemSynth;
+
+    function setupAudio() {
+        // Basic click sound
+        clickSynth = new Tone.Synth().toMaster();
+        clickSynth.oscillator.type = "sine";
+
+        // For correct/wrong answers (polysynth for chords)
+        feedbackSynth = new Tone.PolySynth(Tone.Synth, {
+            oscillator: { type: "triangle" },
+            envelope: { attack: 0.005, decay: 0.1, sustain: 0.2, release: 0.5 }
+        }).toMaster();
+
+        // For game win/lose (more complex synth for melodies)
+        gameEndSynth = new Tone.Synth({
+            oscillator: { type: "square" },
+            envelope: { attack: 0.01, decay: 0.5, sustain: 0.1, release: 1 }
+        }).toMaster();
+
+        // For reward redemption
+        redeemSynth = new Tone.Synth({
+            oscillator: { type: "triangle" },
+            envelope: { attack: 0.01, decay: 0.1, sustain: 0.1, release: 0.5 }
+        }).toMaster();
+    }
+
+    function playSound(type) {
+        // Ensure audio context is started for Tone.js effects
+        if (Tone.context.state !== 'running') {
+            Tone.start();
+        }
+
+        switch (type) {
+            case 'start':
+                clickSynth.triggerAttackRelease("C5", "32n");
+                break;
+            case 'correct':
+                feedbackSynth.triggerAttackRelease(["C5", "E5", "G5"], "8n");
+                break;
+            case 'wrong':
+                feedbackSynth.triggerAttackRelease(["C4", "B3"], "8n");
+                break;
+            case 'win':
+                const winSequence = new Tone.Sequence((time, note) => {
+                    gameEndSynth.triggerAttackRelease(note, "8n", time);
+                }, ["C5", "D5", "E5", "G5", "C6"]).start(0);
+                Tone.Transport.start();
+                winSequence.loop = false;
+                break;
+            case 'lose':
+                const loseSequence = new Tone.Sequence((time, note) => {
+                    gameEndSynth.triggerAttackRelease(note, "8n", time);
+                }, ["C5", "A4", "F4", "D4", "C4"]).start(0);
+                Tone.Transport.start();
+                loseSequence.loop = false;
+                break;
+            case 'redeem':
+                redeemSynth.triggerAttackRelease("G5", "16n", "+0.0", 0.8);
+                redeemSynth.triggerAttackRelease("C6", "16n", "+0.1", 0.8);
+                break;
+        }
+    }
+
+    // Function to handle background audio play/pause (now using native HTML audio)
+    function controlBackgroundMusic(play) {
+        if (backgroundAudio) {
+            if (play) {
+                backgroundAudio.play().catch(error => {
+                    console.error("Erro ao tentar reproduzir o áudio de fundo:", error);
+                    // This catch is important for autoplay policies.
+                    // The audio will only play if there's a user interaction.
+                });
+            } else {
+                backgroundAudio.pause();
+            }
+        }
+    }
+
+    function startAttractionAnimation() {
+        const messageElement = document.getElementById('attraction-message');
+        attractionInterval = setInterval(() => {
+            messageElement.style.opacity = '0';
+            setTimeout(() => {
+                currentAttractionMessageIndex = (currentAttractionMessageIndex + 1) % attractionMessages.length;
+                messageElement.textContent = attractionMessages[currentAttractionMessageIndex];
+                messageElement.style.opacity = '1';
+            }, 1000); // Wait for fade out before changing text
+        }, 5000); // Change message every 5 seconds
+    }
+
+    function stopAttractionAnimation() {
+        clearInterval(attractionInterval);
+    }
+
+    // Modified initAudioAndNavigateTo to start HTML audio
+    async function initAudioAndNavigateTo(screenId) {
+        // Start Tone.js context for sound effects
+        if (Tone.context.state !== 'running') {
+            await Tone.start();
+            console.log('Audio context for Tone.js started');
+        }
+        // Start HTML background audio
+        controlBackgroundMusic(true); // Attempt to play background music
+        navigateTo(screenId);
+    }
+
+    function navigateTo(screenId) {
+        document.querySelectorAll('.screen').forEach(screen => {
+            screen.classList.remove('active-screen');
+        });
+        document.getElementById(screenId).classList.add('active-screen');
+        state.currentScreen = screenId;
+
+        if (screenId === 'attraction-screen') {
+            startAttractionAnimation();
+            controlBackgroundMusic(true); // Ensure BGM plays on attraction screen
+        } else {
+            stopAttractionAnimation();
+            controlBackgroundMusic(true); // Ensure BGM plays on other screens
+        }
+
+        // Clear AI response when navigating away from AI consultant screen
+        if (screenId !== 'ai-consultant-screen') {
+            document.getElementById('ai-response-area').innerHTML = '';
+            document.getElementById('ai-question-input').value = '';
+        }
+    }
+
+    function showModal(title, message) {
+        document.getElementById('modal-title').textContent = title;
+        document.getElementById('modal-message').textContent = message;
+        document.getElementById('modal-container').style.display = 'flex';
+    }
+
+    function closeModal() {
+        document.getElementById('modal-container').style.display = 'none';
+    }
+
+    function login() {
+        const inputCpf = document.getElementById('login-input-cpf').value;
+        const inputPassword = document.getElementById('login-input-password').value;
+        const user = mockData.users.find(u => u.id === inputCpf);
+        
+        if (user && user.password === inputPassword) {
+            state.currentUser = user;
+            document.getElementById('welcome-message').textContent = `Olá, ${user.name}!`;
+            navigateTo('main-menu-screen');
+        } else {
+            showModal('Erro de Login', 'CPF ou senha incorretos. Por favor, tente novamente.');
+        }
+    }
+
+    function loginAsGuest() {
+        state.currentUser = { id: 'guest', name: 'Convidado', points: 0 };
+        document.getElementById('welcome-message').textContent = `Olá, Convidado!`;
+        navigateTo('main-menu-screen');
+    }
+    
+    function logout() {
+        state.currentUser = null;
+        document.getElementById('login-input-cpf').value = '';
+        document.getElementById('login-input-password').value = '';
+        navigateTo('attraction-screen'); // Return to attraction screen on logout
+    }
+
+    function createVirtualKeyboard() {
+        const keyboardContainer = document.getElementById('virtual-keyboard');
+        const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', 'Limpar'];
+        keys.forEach(key => {
+            const keyElement = document.createElement('button');
+            keyElement.textContent = key;
+            keyElement.classList.add('keyboard-key', 'p-4', 'text-2xl', 'font-bold', 'bg-stone-200', 'rounded-lg');
+            keyElement.onclick = () => handleKeyPress(key);
+            keyboardContainer.appendChild(keyElement);
+        });
+    }
+
+    function handleKeyPress(key) {
+        const currentScreenId = state.currentScreen;
+        let inputElement;
+
+        if (currentScreenId === 'login-screen') {
+            // Determine which input is focused for login screen
+            if (document.activeElement === document.getElementById('login-input-cpf')) {
+                inputElement = document.getElementById('login-input-cpf');
+            } else if (document.activeElement === document.getElementById('login-input-password')) {
+                inputElement = document.getElementById('login-input-password');
+            } else {
+                // Default to CPF if no input is focused
+                inputElement = document.getElementById('login-input-cpf');
+            }
+        } else if (currentScreenId === 'registration-screen') {
+            inputElement = document.activeElement; 
+            if (!inputElement || (inputElement.id !== 'reg-cpf-input' && inputElement.id !== 'reg-name-input' && inputElement.id !== 'reg-password-input')) {
+                inputElement = document.getElementById('reg-cpf-input'); 
+            }
+        } else if (currentScreenId === 'ai-consultant-screen') {
+            inputElement = document.getElementById('ai-question-input');
+        } else {
+            return; 
+        }
+
+        if (key === '⌫') {
+            inputElement.value = inputElement.value.slice(0, -1);
+        } else if (key === 'Limpar') {
+            inputElement.value = '';
+        } else {
+            inputElement.value += key;
+        }
+    }
+    
+    function registerUser() {
+        const name = document.getElementById('reg-name-input').value.trim();
+        const cpf = document.getElementById('reg-cpf-input').value.trim();
+        const password = document.getElementById('reg-password-input').value.trim();
+
+        if (!name || !cpf || !password) {
+            showModal('Erro de Cadastro', 'Por favor, preencha todos os campos.');
+            return;
+        }
+
+        if (mockData.users.some(u => u.id === cpf)) {
+            showModal('Erro de Cadastro', 'CPF já cadastrado. Por favor, faça login ou use outro CPF.');
+            return;
+        }
+
+        const newUser = {
+            id: cpf,
+            name: name,
+            password: password, // In a real app, hash this password!
+            points: 0
+        };
+        mockData.users.push(newUser);
+        showModal('Cadastro Realizado!', 'Seu cadastro foi concluído com sucesso! Agora você pode fazer login.');
+        
+        // Clear registration fields
+        document.getElementById('reg-name-input').value = '';
+        document.getElementById('reg-cpf-input').value = '';
+        document.getElementById('reg-password-input').value = '';
+
+        navigateTo('login-screen');
+    }
+
+    function startGame() {
+        state.game.questions = [...mockData.questions].sort(() => 0.5 - Math.random());
+        state.game.currentQuestionIndex = 0;
+        state.game.score = 0;
+        state.game.helpUsed = { '5050': false, 'skip': false, 'coop': false };
+        
+        document.querySelectorAll('#game-play-screen button[id^="help-"]').forEach(btn => btn.disabled = false);
+
+        displayQuestion();
+        navigateTo('game-play-screen');
+        playSound('start'); // Play sound on game start
+    }
+
+    function displayQuestion() {
+        if (state.game.currentQuestionIndex >= state.game.questions.length) {
+            endGame('completed');
+            return;
+        }
+
+        const questionData = state.game.questions[state.game.currentQuestionIndex];
+        document.getElementById('question-text').textContent = questionData.question;
+        document.getElementById('game-score').textContent = state.game.score;
+        
+        const answersGrid = document.getElementById('answers-grid');
+        answersGrid.innerHTML = '';
+        
+        questionData.answers.forEach((answer, index) => {
+            const answerBtn = document.createElement('button');
+            answerBtn.classList.add('answer-btn', 'btn', 'w-full', 'p-6', 'text-2xl', 'text-left', 'font-semibold', 'bg-stone-100', 'border-2', 'border-stone-300', 'rounded-lg');
+            answerBtn.textContent = answer;
+            answerBtn.onclick = () => selectAnswer(index);
+            answersGrid.appendChild(answerBtn);
+        });
+    }
+
+    function selectAnswer(selectedIndex) {
+        clearInterval(state.game.timer);
+        const questionData = state.game.questions[state.game.currentQuestionIndex];
+        const answerButtons = document.querySelectorAll('.answer-btn');
+        
+        answerButtons.forEach(btn => btn.disabled = true);
+
+        if (selectedIndex === questionData.correct) {
+            answerButtons[selectedIndex].classList.remove('bg-stone-100', 'border-stone-300');
+            answerButtons[selectedIndex].classList.add('bg-primary-light', 'border-primary');
+            state.game.score += 100 + (state.game.timerValue > 0 ? state.game.timerValue : 0); // Bonus for time
+            playSound('correct'); // Play correct sound
+            setTimeout(() => {
+                state.game.currentQuestionIndex++;
+                startGameTimerAndDisplayQuestion();
+            }, 1500);
+        } else {
+            answerButtons[selectedIndex].classList.remove('bg-stone-100', 'border-stone-300');
+            answerButtons[selectedIndex].classList.add('bg-red-200', 'border-red-500');
+            answerButtons[questionData.correct].classList.add('bg-primary-light', 'border-primary');
+            playSound('wrong'); // Play wrong sound
+            setTimeout(() => endGame('wrong_answer'), 2000);
+        }
+    }
+    
+    function startGameTimerAndDisplayQuestion() {
+        state.game.timerValue = 60;
+        displayQuestion();
+        clearInterval(state.game.timer);
+        state.game.timer = setInterval(() => {
+            state.game.timerValue--;
+            document.getElementById('game-timer').textContent = `Tempo: ${state.game.timerValue}`;
+            if (state.game.timerValue <= 0) {
+                endGame('time');
+            }
+        }, 1000);
+    }
+    
+    function useHelp(type) {
+        if (state.game.helpUsed[type]) return;
+        state.game.helpUsed[type] = true;
+        document.getElementById(`help-${type}`).disabled = true;
+
+        const questionData = state.game.questions[state.game.currentQuestionIndex];
+        
+        if (type === '5050') {
+            const answerButtons = document.querySelectorAll('.answer-btn');
+            let incorrectsToHide = 2;
+            let hiddenCount = 0;
+            while(hiddenCount < incorrectsToHide) {
+                const randomIndex = Math.floor(Math.random() * 4);
+                if (randomIndex !== questionData.correct && !answerButtons[randomIndex].disabled) {
+                    answerButtons[randomIndex].style.visibility = 'hidden';
+                    answerButtons[randomIndex].disabled = true;
+                    hiddenCount++;
+                }
+            }
+        } else if (type === 'skip') {
+             state.game.currentQuestionIndex++;
+             startGameTimerAndDisplayQuestion();
+        } else if (type === 'coop') {
+            showModal('Dica da Cooperativa', questionData.coopHelp);
+        }
+    }
+
+    function endGame(reason) {
+        clearInterval(state.game.timer);
+        document.getElementById('final-score').textContent = state.game.score;
+        
+        let message = `Você ganhou ${state.game.score} pontos para seu saldo!`;
+        if (state.currentUser.id === 'guest') {
+            message = `Sua pontuação foi ${state.game.score}. Entre com seu CPF para acumular pontos na próxima vez!`;
+            // playSound('lose'); // Moved to controlBackgroundMusic(false) for consistent audio stop
+        } else {
+            state.currentUser.points += state.game.score;
+            if (reason === 'completed') {
+                playSound('win'); // Play win sound if completed
+            } else {
+                playSound('lose'); // Play lose sound if not completed
+            }
+        }
+
+        document.getElementById('points-earned-message').textContent = message;
+        navigateTo('game-results-screen');
+    }
+    
+    function updateRewardsScreen() {
+        const pointsDisplay = document.getElementById('user-points-display');
+        const rewardsList = document.getElementById('rewards-list');
+
+        pointsDisplay.innerHTML = `<p class="text-xl">Seu Saldo</p><p class="text-4xl font-bold">${state.currentUser.points} pontos</p>`;
+        rewardsList.innerHTML = '';
+        
+        mockData.rewards.forEach(reward => {
+            const canRedeem = state.currentUser.id !== 'guest' && state.currentUser.points >= reward.points;
+            
+            const rewardCard = document.createElement('div');
+            // Changed styling for better visibility
+            rewardCard.className = 'p-4 bg-white border border-neutral-light rounded-lg flex justify-between items-center mb-2'; 
+            rewardCard.innerHTML = `
+                <div>
+                    <h4 class="text-xl font-bold">${reward.name}</h4>
+                    <p class="text-primary text-primary-dark font-semibold">${reward.points} pontos</p>
+                </div>
+                <button ${!canRedeem ? 'disabled' : ''} onclick="redeemReward(${reward.points}, '${reward.name}')" 
+                class="btn py-2 px-4 rounded-lg font-semibold ${canRedeem ? 'bg-accent-rewards text-white' : 'bg-neutral-light text-neutral cursor-not-allowed'}">
+                    Resgatar
+                </button>
+            `;
+            rewardsList.appendChild(rewardCard);
+        });
+    }
+    
+    function redeemReward(points, name) {
+        if (state.currentUser.points >= points) {
+            state.currentUser.points -= points;
+            showModal('Prêmio Resgatado!', `Parabéns! Você resgatou "${name}". Apresente o voucher na gerência. Seu novo saldo é ${state.currentUser.points} pontos.`);
+            updateRewardsScreen();
+            playSound('redeem'); // Play redeem sound
+        } else {
+            showModal('Pontos Insuficientes', `Você precisa de ${points} pontos para resgatar "${name}". Atualmente você tem ${state.currentUser.points} pontos.`);
+        }
+    }
+
+    async function askAIQuestion() {
+        const questionInput = document.getElementById('ai-question-input');
+        const responseArea = document.getElementById('ai-response-area');
+        const loadingIndicator = document.getElementById('ai-loading-indicator');
+        const askButton = document.getElementById('ask-ai-btn');
+
+        const prompt = questionInput.value.trim();
+        if (!prompt) {
+            showModal('Atenção', 'Por favor, digite sua pergunta.');
+            return;
+        }
+
+        responseArea.innerHTML = ''; // Clear previous response
+        loadingIndicator.classList.remove('hidden');
+        askButton.disabled = true;
+        questionInput.disabled = true;
+
+        try {
+            let chatHistory = [];
+            chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+            const payload = { contents: chatHistory };
+            const apiKey = ""; // If you want to use models other than gemini-2.0-flash or imagen-3.0-generate-002, provide an API key here. Otherwise, leave this as-is.
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+
+            if (result.candidates && result.candidates.length > 0 &&
+                result.candidates[0].content && result.candidates[0].content.parts &&
+                result.candidates[0].content.parts.length > 0) {
+                const text = result.candidates[0].content.parts[0].text;
+                responseArea.innerHTML = `<p>${text.replace(/\n/g, '<br>')}</p>`;
+            } else {
+                responseArea.innerHTML = '<p class="text-red-500">Desculpe, não consegui gerar uma resposta. Por favor, tente novamente.</p>';
+            }
+        } catch (error) {
+            console.error('Erro ao chamar a API Gemini:', error);
+            responseArea.innerHTML = '<p class="text-red-500">Ocorreu um erro ao processar sua pergunta. Por favor, tente novamente mais tarde.</p>';
+        } finally {
+            loadingIndicator.classList.add('hidden');
+            askButton.disabled = false;
+            questionInput.disabled = false;
+            questionInput.value = ''; // Clear input after asking
+        }
+    }
+
+
+    document.addEventListener('DOMContentLoaded', () => {
+        createVirtualKeyboard();
+
+        // Volume slider listener (for the native audio player)
+        // This slider will now control the HTML audio element's volume
+        document.getElementById('background-audio').addEventListener('volumechange', (e) => {
+            // You can optionally link this to a custom UI slider if you remove native controls
+            console.log('Volume changed to:', e.target.volume);
+        });
+
+        // Event listener for the custom volume slider (if you add one later)
+        // document.getElementById('volume-slider').addEventListener('input', (e) => {
+        //     if (backgroundAudio) {
+        //         backgroundAudio.volume = parseFloat(e.target.value) / 100; // Assuming slider is 0-100
+        //     }
+        // });
+
+        document.getElementById('kiosk-container').addEventListener('click', (e) => {
+           if(e.target.closest('button[onclick^="navigateTo(\'rewards-screen\'"]')) {
+               updateRewardsScreen();
+           }
+        });
+        
+        // Setup Tone.js for sound effects on page load
+        setupAudio(); 
+
+        // Initial navigation to attraction screen
+        navigateTo('attraction-screen');
+    });
+
+</script>
+</body>
+</html>
